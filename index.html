@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Quét đơn JT - Camera</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#111;color:#eee}
+  .hide{display:none!important}
+  .wrap{max-width:560px;margin:0 auto;padding:10px}
+  h1{font-size:18px;margin:6px 0 12px}
+  label{display:block;font-size:14px;margin:10px 0 4px;color:#bbb}
+  input[type=text],input[type=password]{width:100%;padding:12px;font-size:17px;border-radius:10px;border:1px solid #444;background:#1d1d1d;color:#fff}
+  button{font-size:16px;padding:12px 14px;border-radius:10px;border:0;background:#2e7d32;color:#fff;font-weight:600}
+  button.sec{background:#333;color:#ddd}
+  .big{width:100%;margin-top:16px;font-size:18px;padding:14px}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;color:#bbb}
+  .cnt{font-size:22px;color:#fff;font-weight:700}
+  #camBox{position:relative;margin-top:8px;border-radius:12px;overflow:hidden;background:#000;min-height:200px}
+  #reader{width:100%}
+  #reader video{width:100%!important;display:block}
+  #flash{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .35s}
+  #flash.ok{background:rgba(46,204,64,.45);opacity:1;transition:none}
+  #flash.dup{background:rgba(255,140,0,.55);opacity:1;transition:none}
+  #paused{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.7);font-size:18px}
+  .ctr{display:flex;gap:8px;margin-top:8px}
+  .ctr button{flex:1;font-size:14px;padding:10px 6px}
+  #last{margin-top:10px;padding:12px;border-radius:10px;background:#1d1d1d;font-size:15px;min-height:48px;word-break:break-all}
+  #last b{font-size:20px;color:#fff}
+  #st{margin-top:8px;font-size:13px;color:#aaa}
+  #camErr{margin-top:8px;padding:10px;border-radius:10px;background:#4a1d1d;font-size:14px;line-height:1.45}
+  .tag{display:inline-block;padding:2px 7px;border-radius:6px;font-size:12px;font-weight:700;margin-right:6px}
+  .tag.ok{background:#2e7d32;color:#fff}.tag.dup{background:#ef6c00;color:#fff}
+  .tag.wait{background:#555;color:#fff}.tag.err{background:#c62828;color:#fff}
+  ul{list-style:none;padding:0;margin:10px 0 30px}
+  li{display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid #2a2a2a;font-size:14px}
+  li code{font-size:14px;color:#fff;word-break:break-all}
+  li .t{color:#888;font-size:12px;white-space:nowrap;margin-left:8px}
+  .hint{font-size:13px;color:#999;margin-top:8px;line-height:1.45}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Màn hình nhập tên -->
+  <div id="setup">
+    <h1>📷 Quét đơn JT bằng camera</h1>
+    <label for="name">Tên người quét</label>
+    <input id="name" type="text" autocomplete="off" placeholder="VD: Lan">
+    <label for="pin">Mã PIN (nếu có)</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off">
+    <button id="start" class="big">Bắt đầu quét</button>
+    <div class="hint">Lần đầu điện thoại sẽ hỏi quyền dùng camera, bấm <b>Cho phép</b>.</div>
+  </div>
+
+  <!-- Màn hình quét -->
+  <div id="main" class="hide">
+    <div class="top">
+      <span id="who"></span>
+      <span>Đã quét: <span class="cnt" id="cnt">0</span></span>
+      <button class="sec" id="change" style="padding:6px 10px;font-size:13px">Đổi người</button>
+    </div>
+
+    <div id="camBox">
+      <div id="reader"></div>
+      <div id="flash"></div>
+      <div id="paused" class="hide">Đã tạm dừng — bấm Tiếp tục</div>
+    </div>
+
+    <div class="ctr">
+      <button class="sec" id="pauseBtn">⏸ Tạm dừng</button>
+      <button class="sec hide" id="torchBtn">🔦 Đèn</button>
+      <button class="sec" id="photoBtn">📸 Chụp ảnh mã</button>
+    </div>
+    <input id="photo" type="file" accept="image/*" capture="environment" class="hide">
+    <div id="fileReader" class="hide"></div>
+
+    <div id="camErr" class="hide"></div>
+    <div id="last">Đưa mã vạch trên phiếu vào khung hình. Quét xong tự kêu "bíp", đưa phiếu tiếp theo vào là được.</div>
+    <div id="st"></div>
+    <ul id="list"></ul>
+  </div>
+
+</div>
+<script>
+/***** CÀI ĐẶT *****/
+var API = 'https://script.google.com/macros/s/AKfycbyndYC_o580aWR8WdQl8d2_dgHjl2QFiLEiET18Vs5w8Gc_KXlFBR774bgcn82Jf1Vy/exec';
+var MIN_LEN  = 8;     // Bỏ qua mã ngắn hơn số ký tự này (tránh đọc nhầm mã phụ)
+var SAME_GAP = 4000;  // Cùng 1 mã còn nằm trong khung thì không ghi lại (ms)
+var NEXT_GAP = 700;   // Nghỉ giữa 2 lần nhận mã (ms)
+/********************/
+
+
+/* Gọi Apps Script (doPost) */
+function api(body){
+  return fetch(API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(body),redirect:'follow'})
+    .then(function(r){if(!r.ok)throw new Error('Lỗi máy chủ '+r.status);return r.json()})
+    .then(function(j){if(!j.ok)throw new Error(j.error||'Lỗi không rõ');return j.res});
+}
+
+var $=function(id){return document.getElementById(id)};
+var store={
+  get:function(k,d){try{var v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+};
+var name=store.get('qdc_name',''), pin=store.get('qdc_pin','');
+var queue=store.get('qdc_queue',[]), recent=store.get('qdc_recent',[]);
+var count=0, sending=false;
+
+var p2=function(n){return (n<10?'0':'')+n};
+var hhmm=function(ts){var d=new Date(ts);return p2(d.getHours())+':'+p2(d.getMinutes())+':'+p2(d.getSeconds())};
+var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})};
+
+/* ---------- Âm báo ---------- */
+var actx=null;
+function initAudio(){try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume()}catch(e){}}
+function tone(freq,start,dur){
+  if(!actx)return;
+  var o=actx.createOscillator(),g=actx.createGain();
+  o.type='square';o.frequency.value=freq;g.gain.value=0.15;
+  o.connect(g);g.connect(actx.destination);
+  var t=actx.currentTime+start;o.start(t);o.stop(t+dur);
+}
+function beepOk(){tone(1800,0,0.09)}
+function beepDup(){tone(500,0,0.15);tone(500,0.22,0.15)}
+function flash(cls){
+  var f=$('flash');f.className=cls;
+  setTimeout(function(){f.className=''},60);
+  if(cls==='dup'){try{navigator.vibrate&&navigator.vibrate([150,80,150])}catch(e){}}
+  else{try{navigator.vibrate&&navigator.vibrate(60)}catch(e){}}
+}
+
+/* ---------- Danh sách & gửi về Sheet ---------- */
+function status(){
+  var n=queue.length;
+  $('st').innerHTML=n?'<span class="tag wait">Đang gửi '+n+' mã</span> mã chờ gửi được giữ trên máy, mất mạng vẫn quét tiếp được.'
+                    :'<span class="tag ok">Đã lưu hết vào Google Sheet</span>';
+}
+function tag(r){return r.s==='dup'?'<span class="tag dup">TRÙNG</span>':r.s==='ok'?'<span class="tag ok">✓</span>':r.s==='err'?'<span class="tag err">Lỗi</span>':'<span class="tag wait">…</span>'}
+function render(){
+  $('cnt').textContent=count;
+  $('list').innerHTML=recent.slice(0,30).map(function(r){
+    return '<li><span>'+tag(r)+'<code>'+esc(r.code)+'</code></span><span class="t">'+hhmm(r.ts)+'</span></li>';
+  }).join('');
+  status();
+}
+var lastId='',lastCode='';
+function flush(){
+  if(sending||!queue.length)return;
+  sending=true;
+  var batch=queue.slice(0,50);
+  api({action:'addScans',items:batch,pin:pin})
+    .then(function(res){
+      var done={};(res||[]).forEach(function(x){done[x.id]=x.dup});
+      queue=queue.filter(function(q){return done[q.id]===undefined});store.set('qdc_queue',queue);
+      recent.forEach(function(r){if(done[r.id]!==undefined)r.s=done[r.id]?'dup':'ok'});
+      store.set('qdc_recent',recent.slice(0,30));
+      (res||[]).forEach(function(x){
+        if(x.dup&&x.id===lastId){
+          $('last').innerHTML='<span class="tag dup">MÃ TRÙNG</span> đã có trong Sheet: <b>'+esc(lastCode)+'</b>';
+          beepDup();flash('dup');
+        }
+      });
+      sending=false;render();flush();
+    })
+    .catch(function(err){
+      sending=false;
+      var m=String(err&&err.message||err);
+      $('st').innerHTML='<span class="tag err">Chưa gửi được</span> '+esc(m)+' — tự thử lại sau 5 giây.';
+      if(/PIN/.test(m)){stopCam();$('main').classList.add('hide');$('setup').classList.remove('hide');return}
+      setTimeout(flush,5000);
+    });
+}
+function add(code){
+  code=String(code||'').trim();if(!code)return;
+  var it={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),code:code,ts:Date.now(),name:name};
+  queue.push(it);store.set('qdc_queue',queue);
+  var localDup=recent.some(function(r){return r.code===code});
+  recent.unshift({id:it.id,code:code,ts:it.ts,s:'wait'});store.set('qdc_recent',recent.slice(0,30));
+  count++;lastId=it.id;lastCode=code;
+  if(localDup){
+    $('last').innerHTML='<span class="tag dup">MÃ TRÙNG</span> vừa quét rồi: <b>'+esc(code)+'</b> '+hhmm(it.ts);
+    beepDup();flash('dup');
+  }else{
+    $('last').innerHTML='Vừa quét <b>'+esc(code)+'</b> '+hhmm(it.ts);
+    beepOk();flash('ok');
+  }
+  render();flush();
+}
+
+/* ---------- Camera ---------- */
+var cam=null, camOn=false, paused=false, torchOn=false;
+var seen={}, lockUntil=0;
+function onScan(text){
+  var code=String(text||'').trim(), now=Date.now();
+  if(code.length<MIN_LEN)return;
+  if(seen[code]&&now-seen[code]<SAME_GAP){seen[code]=now;return;}  // phiếu vẫn nằm trong khung
+  if(now<lockUntil)return;
+  seen[code]=now;lockUntil=now+NEXT_GAP;
+  add(code);
+}
+function camConfig(){
+  return {
+    fps:15,
+    qrbox:function(w,h){var bw=Math.floor(w*0.92);return{width:bw,height:Math.max(80,Math.floor(Math.min(h*0.6,bw*0.5)))}},
+    disableFlip:true
+  };
+}
+function showCamErr(e){
+  var m=String(e&&e.message||e||'');
+  $('camErr').innerHTML='<b>Không mở được camera.</b> '+esc(m)+
+    '<br>• Kiểm tra đã cho phép camera chưa (iPhone: Cài đặt → Safari → Camera → Cho phép; Android: bấm biểu tượng ổ khoá cạnh địa chỉ web).'+
+    '<br>• Tạm thời vẫn quét được bằng nút <b>📸 Chụp ảnh mã</b>: chụp từng phiếu, mã tự nhận và tự vào Sheet.';
+  $('camErr').classList.remove('hide');
+}
+function startCam(){
+  if(camOn)return;
+  $('camErr').classList.add('hide');
+  if(!window.Html5Qrcode){showCamErr('Chưa tải được bộ đọc mã, kiểm tra mạng rồi tải lại trang.');return;}
+  if(!cam){
+    var F=Html5QrcodeSupportedFormats;
+    cam=new Html5Qrcode('reader',{
+      formatsToSupport:[F.CODE_128,F.CODE_39,F.CODE_93,F.EAN_13,F.QR_CODE],
+      experimentalFeatures:{useBarCodeDetectorIfSupported:true},
+      verbose:false
+    });
+  }
+  var cfg=camConfig();
+  cfg.videoConstraints={facingMode:'environment',width:{ideal:1920},height:{ideal:1080}};
+  cam.start({facingMode:'environment'},cfg,onScan,function(){})
+    .catch(function(){ // máy không hỗ trợ độ phân giải cao → thử lại cấu hình đơn giản
+      return cam.start({facingMode:'environment'},camConfig(),onScan,function(){});
+    })
+    .then(function(){camOn=true;setupTorch();})
+    .catch(function(e){camOn=false;showCamErr(e);});
+}
+function stopCam(){
+  if(cam&&camOn){camOn=false;try{cam.stop().catch(function(){})}catch(e){}}
+  $('torchBtn').classList.add('hide');torchOn=false;
+}
+function setupTorch(){
+  try{
+    var tf=cam.getRunningTrackCameraCapabilities().torchFeature();
+    if(tf.isSupported()){$('torchBtn').classList.remove('hide');$('torchBtn').textContent='🔦 Bật đèn';}
+  }catch(e){}
+}
+$('torchBtn').addEventListener('click',function(){
+  try{
+    torchOn=!torchOn;
+    cam.getRunningTrackCameraCapabilities().torchFeature().apply(torchOn);
+    this.textContent=torchOn?'🔦 Tắt đèn':'🔦 Bật đèn';
+  }catch(e){}
+});
+$('pauseBtn').addEventListener('click',function(){
+  initAudio();
+  if(!paused){paused=true;stopCam();$('paused').classList.remove('hide');this.textContent='▶ Tiếp tục';}
+  else{paused=false;$('paused').classList.add('hide');this.textContent='⏸ Tạm dừng';startCam();}
+});
+document.addEventListener('visibilitychange',function(){
+  if($('main').classList.contains('hide'))return;
+  if(document.hidden)stopCam(); else if(!paused)startCam();
+});
+
+/* ---------- Dự phòng: chụp ảnh mã ---------- */
+var fileCam=null;
+$('photoBtn').addEventListener('click',function(){initAudio();$('photo').value='';$('photo').click();});
+$('photo').addEventListener('change',function(){
+  var f=this.files&&this.files[0];if(!f)return;
+  if(!window.Html5Qrcode){$('last').textContent='Chưa tải được bộ đọc mã.';return;}
+  if(!fileCam)fileCam=new Html5Qrcode('fileReader',{verbose:false});
+  $('last').textContent='Đang đọc ảnh…';
+  fileCam.scanFile(f,false).then(function(text){
+    var code=String(text||'').trim();
+    if(code.length<MIN_LEN){$('last').innerHTML='<span class="tag err">Không đọc được</span> mã quá ngắn: '+esc(code);return;}
+    add(code);
+  }).catch(function(){
+    $('last').innerHTML='<span class="tag err">Không đọc được mã</span> chụp lại gần hơn, đủ sáng, mã vạch nằm ngang.';
+    beepDup();
+  });
+});
+
+/* ---------- Vào / ra ---------- */
+function enter(){
+  $('who').textContent='👤 '+name;
+  $('setup').classList.add('hide');$('main').classList.remove('hide');
+  render();flush();paused=false;startCam();
+}
+$('name').value=name;$('pin').value=pin;
+$('start').addEventListener('click',function(){
+  initAudio();
+  var n=$('name').value.trim();if(!n){$('name').focus();return}
+  name=n;pin=$('pin').value.trim();store.set('qdc_name',name);store.set('qdc_pin',pin);
+  var b=this;b.textContent='Đang kiểm tra…';
+  api({action:'checkPin',pin:pin})
+    .then(function(){b.textContent='Bắt đầu quét';enter()})
+    .catch(function(err){b.textContent=String(err&&err.message||err)+' — bấm lại'});
+});
+$('change').addEventListener('click',function(){
+  stopCam();$('main').classList.add('hide');$('setup').classList.remove('hide');
+});
+render();
+setInterval(flush,15000);
+window.addEventListener('online',flush);
+</script>
+</body>
+</html>
