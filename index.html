@@ -40,6 +40,7 @@
   li code{font-size:14px;color:#fff;word-break:break-all}
   li .t{color:#888;font-size:12px;white-space:nowrap;margin-left:8px}
   .hint{font-size:13px;color:#999;margin-top:8px;line-height:1.45}
+.modebar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.modebar button{min-height:52px;font-size:16px;font-weight:700;border-radius:10px;border:2px solid #555;background:#222;color:#ddd;line-height:1.2}.modebar button small{display:block;font-weight:400;font-size:12px;opacity:.85}.modebar button.on[data-m=truoc]{background:#0b6e8a;border-color:#1aa3c9;color:#fff}.modebar button.on[data-m=luc]{background:#ff4f00;border-color:#ff4f00;color:#fff}.modetxt{font-weight:700;font-size:15px;margin:0 0 8px}.modetxt.truoc{color:#5fd0f0}.modetxt.luc{color:#ff8a50}
 </style>
 </head>
 <body>
@@ -50,6 +51,7 @@
     <h1>📷 Quét đơn JT bằng camera</h1>
     <label for="name">Tên người quét</label>
     <input id="name" type="text" autocomplete="off" placeholder="VD: Lan">
+    <div class="modebar"><button type="button" data-m="truoc">Lần 1<small>Trước bàn giao</small></button><button type="button" data-m="luc">Lần 2<small>Lúc bàn giao</small></button></div><div class="modetxt"></div>
     <label for="pin">Mã PIN (nếu có)</label>
     <input id="pin" type="password" inputmode="numeric" autocomplete="off">
     <button id="start" class="big">Bắt đầu quét</button>
@@ -58,6 +60,7 @@
 
   <!-- Màn hình quét -->
   <div id="main" class="hide">
+  <div class="modebar"><button type="button" data-m="truoc">Lần 1<small>Trước bàn giao</small></button><button type="button" data-m="luc">Lần 2<small>Lúc bàn giao</small></button></div><div class="modetxt"></div>
     <div class="top">
       <span id="who"></span>
       <span>Đã quét: <span class="cnt" id="cnt">0</span></span>
@@ -106,7 +109,7 @@ var store={
   get:function(k,d){try{var v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
   set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
 };
-var name=store.get('qdc_name',''), pin=store.get('qdc_pin','');
+var mode=store.get('qdc_mode','');var name=store.get('qdc_name',''), pin=store.get('qdc_pin','');
 var queue=store.get('qdc_queue',[]), recent=store.get('qdc_recent',[]);
 var count=0, sending=false;
 
@@ -175,11 +178,11 @@ function flush(){
     });
 }
 function add(code){
-  code=String(code||'').trim();if(!code)return;
-  var it={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),code:code,ts:Date.now(),name:name};
+  code=String(code||'').trim();if(!code)return;if(!mode){$('last').textContent='Chọn Lần 1 hoặc Lần 2 ở trên trước khi quét';beepDup();return}
+  var it={id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),code:code,ts:Date.now(),name:name,mode:mode};
   queue.push(it);store.set('qdc_queue',queue);
-  var localDup=recent.some(function(r){return r.code===code});
-  recent.unshift({id:it.id,code:code,ts:it.ts,s:'wait'});store.set('qdc_recent',recent.slice(0,30));
+  var localDup=recent.some(function(r){return r.code===code&&r.m===mode});
+  recent.unshift({id:it.id,code:code,ts:it.ts,s:'wait',m:mode});store.set('qdc_recent',recent.slice(0,30));
   count++;lastId=it.id;lastCode=code;
   if(localDup){
     $('last').innerHTML='<span class="tag dup">MÃ TRÙNG</span> vừa quét rồi: <b>'+esc(code)+'</b> '+hhmm(it.ts);
@@ -291,7 +294,7 @@ function enter(){
 $('name').value=name;$('pin').value=pin;
 $('start').addEventListener('click',function(){
   initAudio();
-  var n=$('name').value.trim();if(!n){$('name').focus();return}
+  var n=$('name').value.trim();if(!n){$('name').focus();return}if(!mode){this.textContent='Chọn Lần 1 hoặc Lần 2 rồi bấm lại';return}
   name=n;pin=$('pin').value.trim();store.set('qdc_name',name);store.set('qdc_pin',pin);
   var b=this;b.textContent='Đang kiểm tra…';
   api({action:'checkPin',pin:pin})
@@ -304,6 +307,11 @@ $('change').addEventListener('click',function(){
 render();
 setInterval(flush,15000);
 window.addEventListener('online',flush);
+/* Chọn lần quét */
+var MODES={truoc:'LẦN 1 · TRƯỚC BÀN GIAO',luc:'LẦN 2 · LÚC BÀN GIAO'};
+function showMode(){[].forEach.call(document.querySelectorAll('.modebar button'),function(b){b.classList.toggle('on',b.dataset.m===mode)});[].forEach.call(document.querySelectorAll('.modetxt'),function(t){t.className='modetxt '+(mode||'');t.textContent=mode?'Đang quét: '+MODES[mode]:''})}
+[].forEach.call(document.querySelectorAll('.modebar button'),function(b){b.addEventListener('click',function(){mode=b.dataset.m;store.set('qdc_mode',mode);showMode();if(!$('main').classList.contains('hide')){count=0;render();$('last').textContent='Đã chuyển sang '+MODES[mode].toLowerCase()}})});
+showMode();
 </script>
 </body>
 </html>
